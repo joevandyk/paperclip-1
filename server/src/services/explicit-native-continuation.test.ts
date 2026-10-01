@@ -1029,6 +1029,82 @@ const support = await getEmbeddedPostgresTestSupport();
         expect(await getExecutionBlocker(db, f.companyId, f.issueId)).not.toBeNull();
       }
     });
+  async function seedResultBeforeTerminalFailure(f: Fixture) {
+    const contractId = randomUUID(), resultId = randomUUID();
+    await db.insert(completionContracts).values({ id: contractId, companyId: f.companyId, issueId: f.issueId,
+      revision: 1, schemaVersion: "paperclip.completion-contract.v1", policyVersion: "test",
+      risk: "standard", completionAuthority: "server_arbiter", incompleteCriteriaPolicy: "preserve_non_terminal",
+      contractJson: {}, canonicalSha256: contractId, createdByActorType: "system", createdByActorId: "test" });
+    await db.update(heartbeatRuns).set({ completionContractId: contractId, errorCode: "provider_transport_failed" })
+      .where(eq(heartbeatRuns.id, f.sourceRunId));
+    // Dickens returned a result before checkpoint/suspension failed. Accepting
+    // that result did not commit its disposition or make the failed run live.
+    await db.insert(nativeRunResults).values({ id: resultId, companyId: f.companyId, issueId: f.issueId,
+      runId: f.sourceRunId, completionContractId: contractId, serverFingerprint: resultId,
+      schemaStatus: "accepted", canonicalSha256: resultId,
+      resultJson: { terminal: { runTerminalState: "succeeded", reportedWorkDisposition: "blocked" } } });
+    await db.update(nativeRunFinalizations).set({ resultId, failureCode: "native_session_retry_exhausted" })
+      .where(eq(nativeRunFinalizations.runId, f.sourceRunId));
+    return resultId;
+  }
+  it.each(["stopped", "controller", "successor", "still_committing", "live_process", "identity_missing"])(
+    "continues after terminal failure with a retained result only when execution stopped (%s)", async scenario => {
+      const f = await seed(), resultId = await seedResultBeforeTerminalFailure(f);
+      await db.update(nativeRunFinalizations).set({
+        phase: scenario === "still_committing" ? "result_accepted" : "terminal_failure",
+        leaseOwner: scenario === "controller" ? "active-controller" : null,
+        failureDetail: scenario === "successor" ? { successorRunId: randomUUID() } : null,
+      }).where(eq(nativeRunFinalizations.runId, f.sourceRunId));
+      if (scenario === "live_process" || scenario === "identity_missing") {
+        await db.update(heartbeatRuns).set({ processPid: scenario === "live_process" ? process.pid : null })
+          .where(eq(heartbeatRuns.id, f.sourceRunId));
+      }
+      const result = await admit(f);
+      expect(result).toEqual(scenario === "stopped" ? { previousRunId: f.sourceRunId, commentId: f.commentId } : null);
+      expect(await getExecutionBlocker(db, f.companyId, f.issueId)).toEqual(scenario === "stopped" ? null : expect.anything());
+      const [coordinator] = await db.select().from(nativeRunFinalizations).where(eq(nativeRunFinalizations.runId, f.sourceRunId));
+      expect(coordinator).toMatchObject({ resultId, attempt: 3,
+        phase: scenario === "still_committing" ? "result_accepted" : "terminal_failure" });
+      const [source] = await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.id, f.sourceRunId));
+      expect(source).toMatchObject({ status: "failed", errorCode: "provider_transport_failed" });
+      const [savedResult] = await db.select().from(nativeRunResults).where(eq(nativeRunResults.id, resultId));
+      expect(savedResult.resultJson).toEqual({ terminal: { runTerminalState: "succeeded", reportedWorkDisposition: "blocked" } });
+    });
+  it("delivers a queued message exactly once after a retained-result failure and delayed remote stop", async () => {
+    const f = await seed(), resultId = await seedResultBeforeTerminalFailure(f);
+    // Occupy the agent slot so admission is real without launching a provider.
+    await db.insert(heartbeatRuns).values({ companyId: f.companyId, agentId: f.agentId, status: "running" });
+    const lease = { id: randomUUID(), companyId: f.companyId, heartbeatRunId: f.sourceRunId,
+      provider: "daytona", providerLeaseId: "dickens-stopped-sandbox" };
+    await db.insert(environmentLeases).values({ ...lease, status: "active", leasePolicy: "ephemeral" });
+    const heartbeat = heartbeatService(db);
+    const wake = await heartbeat.wakeup(f.agentId, {
+      source: "automation", triggerDetail: "system", reason: "issue_commented",
+      requestedByActorType: "user", requestedByActorId: "board",
+      payload: { issueId: f.issueId, commentId: f.commentId },
+      contextSnapshot: { issueId: f.issueId, wakeCommentId: f.commentId },
+    });
+    expect(wake).toBeNull();
+    const [waiting] = await db.select().from(agentWakeupRequests).where(eq(agentWakeupRequests.companyId, f.companyId));
+    expect(waiting).toMatchObject({ status: "deferred_issue_execution", runId: null,
+      payload: { executionWait: { reason: "remote_cleanup" } } });
+    const [source] = await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.id, f.sourceRunId));
+    await heartbeat.resumeRemoteStopComments(source);
+    expect(await db.select().from(heartbeatRuns).where(and(eq(heartbeatRuns.companyId, f.companyId), eq(heartbeatRuns.status, "queued")))).toHaveLength(0);
+    await db.update(environmentLeases).set({ status: "released", releasedAt: new Date(), cleanupStatus: "success",
+      metadata: { remoteExecutionTermination: remoteTerminationReceipt(lease, { providerLeaseId: lease.providerLeaseId, state: "stopped" }) },
+    }).where(eq(environmentLeases.id, lease.id));
+    await heartbeat.resumeRemoteStopComments(source);
+    await heartbeat.resumeRemoteStopComments(source);
+    const successors = await db.select().from(heartbeatRuns).where(and(eq(heartbeatRuns.companyId, f.companyId), eq(heartbeatRuns.status, "queued")));
+    expect(successors).toHaveLength(1);
+    expect(successors[0].contextSnapshot).toMatchObject({ forceFreshSession: true, previousRunId: f.sourceRunId, wakeCommentId: f.commentId });
+    const [delivered] = await db.select().from(agentWakeupRequests).where(eq(agentWakeupRequests.id, waiting.id));
+    expect(delivered).toMatchObject({ status: "coalesced", runId: successors[0].id });
+    const [coordinator] = await db.select().from(nativeRunFinalizations).where(eq(nativeRunFinalizations.runId, f.sourceRunId));
+    expect(coordinator).toMatchObject({ phase: "terminal_failure", resultId, attempt: 3 });
+    expect(await getExecutionBlocker(db, f.companyId, f.issueId)).toBeNull();
+  });
   it.each(["linked", "revoked", "unlinked", "wrong_author"])(
     "admits a fresh Slack message after failure only with current linked-user authority (%s)", async scenario => {
       const f = await seed();
