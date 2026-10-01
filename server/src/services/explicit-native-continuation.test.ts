@@ -1119,16 +1119,37 @@ const support = await getEmbeddedPostgresTestSupport();
     const lease = { id: randomUUID(), companyId: f.companyId, heartbeatRunId: f.sourceRunId,
       provider: "daytona", providerLeaseId: "pending-workspace-export" };
     await db.insert(environmentLeases).values({ ...lease, status: "active", leasePolicy: "ephemeral" });
+    const [run] = await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.id, f.sourceRunId));
+    await db.update(heartbeatRuns).set({ runnerProfileJson: { ...run.runnerProfileJson,
+      nativeWorkspaceSync: { schema: "paperclip.native-workspace-sync/v1", state: "prepared",
+        descriptorSha256: "a".repeat(64), baselineSha256: "b".repeat(64), finalHostSha256: null,
+        workspaceId: randomUUID(), leaseId: lease.id, providerLeaseId: lease.providerLeaseId,
+        remoteCwd: "/work", resourceDisposition: "destroy" },
+    } }).where(eq(heartbeatRuns.id, f.sourceRunId));
     for (let attempt = 0; attempt < 3; attempt++) {
       await recordNativeFinalizationFailure({ db, runId: f.sourceRunId,
         error: new Error("native_workspace_sync_out_failed"), failureScope: "workspace", projectRunStatus: true });
     }
+    const [retainedLease] = await db.select().from(environmentLeases).where(eq(environmentLeases.id, lease.id));
+    expect(retainedLease).toMatchObject({ status: "pending_cleanup", metadata: {
+      nativeWorkspaceExportResume: { runId: f.sourceRunId, leaseId: lease.id, resultId },
+    } });
     await db.update(environmentLeases).set({ status: "released", releasedAt: new Date(), cleanupStatus: "success",
-      metadata: { remoteExecutionTermination: remoteTerminationReceipt(lease, { providerLeaseId: lease.providerLeaseId, state: "stopped" }) },
+      metadata: { ...retainedLease.metadata,
+        remoteExecutionTermination: remoteTerminationReceipt(lease, { providerLeaseId: lease.providerLeaseId, state: "stopped" }) },
     }).where(eq(environmentLeases.id, lease.id));
-    // A new conversation is not a request to retry or abandon an accepted export.
+    const exportState = () => Promise.all([
+      db.select().from(heartbeatRuns).where(eq(heartbeatRuns.id, f.sourceRunId)),
+      db.select().from(nativeRunResults).where(eq(nativeRunResults.id, resultId)),
+      db.select().from(environmentLeases).where(eq(environmentLeases.id, lease.id)),
+      db.select().from(issueRecoveryActions).where(eq(issueRecoveryActions.sourceIssueId, f.issueId)),
+    ]);
+    const before = await exportState();
+    // Export repair is intentionally excluded before conversation stop checks.
+    // A new message must leave the accepted result, retention, and repair intact.
     await db.update(issueComments).set({ createdAt: new Date(Date.now() + 1000) }).where(eq(issueComments.id, f.commentId));
     expect(await admit(f)).toBeNull();
+    expect(await exportState()).toEqual(before);
     const [coordinator] = await db.select().from(nativeRunFinalizations).where(eq(nativeRunFinalizations.runId, f.sourceRunId));
     expect(coordinator).toMatchObject({ phase: "terminal_failure", resultId, attempt: 1,
       failureCode: "native_workspace_sync_out_retry_exhausted", failureDetail: { workspaceFinalizeAttempt: 3 } });
