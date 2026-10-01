@@ -54,13 +54,23 @@ async function main() {
     let response;
     if (base && env.PAPERCLIP_GITHUB_BROKER_TOKEN) {
       const url = base.replace(/\/+$/, '').replace(/\/api$/, '') + '/runtime-tools/github/credentials';
+      // A slow or restarting control plane must not cost the operation its
+      // managed identity, so a failed request is retried before giving up.
+      let transportFailures = 0;
       for (let attempt = 0; attempt < 30; attempt++) {
-        response = await fetch(url, {
-          method: 'POST', redirect: 'error', signal: AbortSignal.timeout(10000),
-          headers: { authorization: 'Bearer ' + (env.PAPERCLIP_GITHUB_BRIDGE_TOKEN || env.PAPERCLIP_API_KEY || env.PAPERCLIP_GITHUB_BROKER_TOKEN),
-            'x-paperclip-github-capability': env.PAPERCLIP_GITHUB_BROKER_TOKEN, 'content-type': 'application/json' },
-          body: '{}',
-        });
+        try {
+          response = await fetch(url, {
+            method: 'POST', redirect: 'error', signal: AbortSignal.timeout(10000),
+            headers: { authorization: 'Bearer ' + (env.PAPERCLIP_GITHUB_BRIDGE_TOKEN || env.PAPERCLIP_API_KEY || env.PAPERCLIP_GITHUB_BROKER_TOKEN),
+              'x-paperclip-github-capability': env.PAPERCLIP_GITHUB_BROKER_TOKEN, 'content-type': 'application/json' },
+            body: '{}',
+          });
+        } catch (error) {
+          transportFailures += 1;
+          if (transportFailures >= 3) throw error;
+          await new Promise(resolve => setTimeout(resolve, 500 * transportFailures));
+          continue;
+        }
         if (response.status !== 409) break;
         await response.arrayBuffer();
         await new Promise(resolve => setTimeout(resolve, 1000));

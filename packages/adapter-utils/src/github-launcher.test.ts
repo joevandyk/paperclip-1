@@ -61,7 +61,7 @@ describe("managed GitHub launchers", () => {
       ...process.env, ...githubBrokerEnvironment({}, { url: `http://127.0.0.1:${port}`, token: "private-capability" }),
       GH_CONFIG_DIR: configRoot, PATH: `${bin}:${process.env.PATH}`,
     } });
-  });
+  }, 15_000); // broker-offline retries the transport twice per command before it falls back
 
   it("explains unavailable access while allowing local work without credentials", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "paperclip-github-diagnostic-"));
@@ -81,6 +81,32 @@ describe("managed GitHub launchers", () => {
     expect(JSON.parse(result.stdout)).toEqual({token:null});
     expect(result.stderr).toContain("More than one managed GitHub identity matches this run");
     expect(result.stderr).not.toMatch(/host-token|must-not-be-used|run-capability/);
+  });
+  it("retries a briefly unreachable broker and still uses managed credentials", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "paperclip-github-retry-"));
+    cleanups.push(() => rm(root, {recursive:true,force:true}));
+    const bin = path.join(root,"managed"), realBin = path.join(root,"real");
+    await mkdir(bin); await mkdir(realBin);
+    await writeFile(path.join(bin,"gh"), githubLauncherSource(), {mode:0o700});
+    await writeFile(path.join(realBin,"gh"), '#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify({token:process.env.GH_TOKEN ?? null}));', {mode:0o700});
+    // Reserve a port, then leave it closed so the first request fails at the transport level.
+    const probe = createServer();
+    await new Promise<void>(resolve => probe.listen(0,"127.0.0.1",resolve));
+    const {port} = probe.address() as {port:number};
+    await new Promise<void>(resolve => probe.close(() => resolve()));
+    let requests = 0;
+    const server = createServer((_req,res) => {
+      requests++;
+      res.setHeader("content-type","application/json");
+      res.end(JSON.stringify({status:"available",env:{GH_TOKEN:"managed-token"}}));
+    });
+    const started = new Promise<void>(resolve => setTimeout(() => server.listen(port,"127.0.0.1",resolve), 300));
+    cleanups.push(async () => { await started; await new Promise<void>(resolve => server.close(() => resolve())); });
+    const result = await exec(path.join(bin,"gh"), [], {env:{...process.env,...githubBrokerEnvironment({GH_TOKEN:"host-token"},{url:`http://127.0.0.1:${port}`,token:"run-capability"}),PATH:`${bin}:${realBin}:${process.env.PATH}`}});
+    expect(JSON.parse(result.stdout)).toEqual({token:"managed-token"});
+    expect(requests).toBe(1);
+    expect(result.stderr).not.toContain("broker_transport_unavailable");
+    expect(result.stderr).not.toMatch(/host-token|run-capability/);
   });
   it("captures each command's identity and clears host credentials when the next person has none", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "paperclip-github-launcher-test-"));
