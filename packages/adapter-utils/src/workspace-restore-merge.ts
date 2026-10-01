@@ -205,6 +205,7 @@ const LOCK_DIAGNOSTIC_READ_TIMEOUT_MS = 100;
 const activeDirectoryMergeLocks = new Set<string>();
 const MAX_LOCK_DIAGNOSTIC_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 export type DirectoryMergeLockOperation =
+  | "agent_directory_prepare"
   | "agent_directory_release"
   | "agent_directory_collect"
   | "agent_directory_checkpoint"
