@@ -19,6 +19,7 @@ import { buildExecutionContinuation } from "./execution-continuation.js";
 import { heartbeatService, persistHeartbeatRunProcessMetadata, type HeartbeatEnvironmentRuntime } from "./heartbeat.js";
 import { getExecutionBlocker } from "./execution-blocker.js";
 import { createDurableChatWakeupRequest } from "./durable-chat-wakeup.js";
+import { recordNativeFinalizationFailure } from "./native-runtime/native-run-finalizer.js";
 const support = await getEmbeddedPostgresTestSupport();
 (support.supported ? describe : describe.skip)("explicit native conversation continuation", () => {
   let database: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>>;
@@ -1045,6 +1046,9 @@ const support = await getEmbeddedPostgresTestSupport();
       resultJson: { terminal: { runTerminalState: "succeeded", reportedWorkDisposition: "blocked" } } });
     await db.update(nativeRunFinalizations).set({ resultId, failureCode: "native_session_retry_exhausted" })
       .where(eq(nativeRunFinalizations.runId, f.sourceRunId));
+    await db.update(issueRecoveryActions).set({ status: "active", cause: "native_session_retry_exhausted",
+      evidence: { runId: f.sourceRunId, coordinatorAttempt: 3, sourceFailureCode: "provider_transport_failed" },
+    }).where(eq(issueRecoveryActions.sourceIssueId, f.issueId));
     return resultId;
   }
   it.each(["stopped", "controller", "successor", "still_committing", "live_process", "identity_missing"])(
@@ -1104,6 +1108,34 @@ const support = await getEmbeddedPostgresTestSupport();
     const [coordinator] = await db.select().from(nativeRunFinalizations).where(eq(nativeRunFinalizations.runId, f.sourceRunId));
     expect(coordinator).toMatchObject({ phase: "terminal_failure", resultId, attempt: 3 });
     expect(await getExecutionBlocker(db, f.companyId, f.issueId)).toBeNull();
+  });
+  it("keeps exhausted workspace export on its own repair path after the sandbox stops", async () => {
+    const f = await seed(), resultId = await seedResultBeforeTerminalFailure(f);
+    await db.delete(issueRecoveryActions).where(eq(issueRecoveryActions.sourceIssueId, f.issueId));
+    await db.update(nativeRunFinalizations).set({ phase: "result_accepted", attempt: 1, failureCode: null, failureDetail: null })
+      .where(eq(nativeRunFinalizations.runId, f.sourceRunId));
+    await db.update(heartbeatRuns).set({ status: "running", nativePhase: "result_accepted", finishedAt: null })
+      .where(eq(heartbeatRuns.id, f.sourceRunId));
+    const lease = { id: randomUUID(), companyId: f.companyId, heartbeatRunId: f.sourceRunId,
+      provider: "daytona", providerLeaseId: "pending-workspace-export" };
+    await db.insert(environmentLeases).values({ ...lease, status: "active", leasePolicy: "ephemeral" });
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await recordNativeFinalizationFailure({ db, runId: f.sourceRunId,
+        error: new Error("native_workspace_sync_out_failed"), failureScope: "workspace", projectRunStatus: true });
+    }
+    await db.update(environmentLeases).set({ status: "released", releasedAt: new Date(), cleanupStatus: "success",
+      metadata: { remoteExecutionTermination: remoteTerminationReceipt(lease, { providerLeaseId: lease.providerLeaseId, state: "stopped" }) },
+    }).where(eq(environmentLeases.id, lease.id));
+    // A new conversation is not a request to retry or abandon an accepted export.
+    await db.update(issueComments).set({ createdAt: new Date(Date.now() + 1000) }).where(eq(issueComments.id, f.commentId));
+    expect(await admit(f)).toBeNull();
+    const [coordinator] = await db.select().from(nativeRunFinalizations).where(eq(nativeRunFinalizations.runId, f.sourceRunId));
+    expect(coordinator).toMatchObject({ phase: "terminal_failure", resultId, attempt: 1,
+      failureCode: "native_workspace_sync_out_retry_exhausted", failureDetail: { workspaceFinalizeAttempt: 3 } });
+    const [action] = await db.select().from(issueRecoveryActions).where(and(
+      eq(issueRecoveryActions.sourceIssueId, f.issueId), eq(issueRecoveryActions.cause, "native_workspace_sync_out_retry_exhausted"),
+    ));
+    expect(action).toMatchObject({ status: "active", cause: "native_workspace_sync_out_retry_exhausted" });
   });
   it.each(["linked", "revoked", "unlinked", "wrong_author"])(
     "admits a fresh Slack message after failure only with current linked-user authority (%s)", async scenario => {
