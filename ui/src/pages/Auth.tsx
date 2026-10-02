@@ -104,6 +104,7 @@ export function AuthPage() {
   const googleEnabled = isGoogleSignInEnabled(healthQuery.data);
   const googleError = googleEnabled ? googleSignInErrorMessage(searchParams.get("error")) : null;
   const passwordEnabled = !healthQuery.data?.authPasswordLoginDisabled;
+  const signUpEnabled = passwordEnabled && !healthQuery.data?.authSignUpDisabled;
 
   return (
     <div className="fixed inset-0 flex bg-background">
@@ -236,7 +237,7 @@ export function AuthPage() {
             </div>
           )}
 
-          {passwordEnabled && (
+          {signUpEnabled && (
             <div className="mt-5 text-sm text-muted-foreground">
               {mode === "sign_in" ? "Need an account?" : "Already have an account?"}{" "}
               <button

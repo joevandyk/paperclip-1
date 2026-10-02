@@ -483,6 +483,7 @@ export async function createApp(
     authReady: boolean;
     authSocialProviders?: string[];
     authPasswordLoginDisabled?: boolean;
+    authSignUpDisabled?: boolean;
     companyDeletionEnabled: boolean;
     announcements?: { enabled: boolean; feedUrl: string };
     instanceId?: string;
@@ -652,6 +653,7 @@ export async function createApp(
       authReady: opts.authReady,
       authSocialProviders: opts.authSocialProviders,
       authPasswordLoginDisabled: opts.authPasswordLoginDisabled,
+      authSignUpDisabled: opts.authSignUpDisabled,
       companyDeletionEnabled: opts.companyDeletionEnabled,
       databaseBackupHealth: opts.databaseBackupHealth,
     }),

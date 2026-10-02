@@ -40,6 +40,8 @@ export type HealthStatus = {
   authSocialProviders?: string[];
   /** True when the server has turned off email/password sign-in. */
   authPasswordLoginDisabled?: boolean;
+  /** True when the server has turned off email/password sign-up. */
+  authSignUpDisabled?: boolean;
   features?: {
     companyDeletionEnabled?: boolean;
   };

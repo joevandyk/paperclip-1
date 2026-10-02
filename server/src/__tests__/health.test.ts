@@ -450,6 +450,7 @@ describe("GET /health", () => {
         authReady: true,
         authSocialProviders: ["google"],
         authPasswordLoginDisabled: true,
+        authSignUpDisabled: true,
         companyDeletionEnabled: false,
         serverInfo: testServerInfo,
       }),
@@ -460,6 +461,7 @@ describe("GET /health", () => {
     expect(res.status).toBe(200);
     expect(res.body.authSocialProviders).toEqual(["google"]);
     expect(res.body.authPasswordLoginDisabled).toBe(true);
+    expect(res.body.authSignUpDisabled).toBe(true);
   });
 
   it("redacts detailed metadata when authenticated mode is reached without auth middleware", async () => {

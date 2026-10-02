@@ -915,6 +915,7 @@ async function startServerWithDatabaseTeardown(
     authReady,
     authSocialProviders: config.deploymentMode === "authenticated" && config.authGoogle ? ["google"] : [],
     authPasswordLoginDisabled: config.deploymentMode === "authenticated" && config.authDisablePasswordLogin,
+    authSignUpDisabled: config.deploymentMode === "authenticated" && config.authDisableSignUp,
     companyDeletionEnabled: config.companyDeletionEnabled,
     announcements: { enabled: config.announcementsEnabled, feedUrl: config.announcementsFeedUrl },
     pluginMigrationDb: pluginMigrationDb as any,

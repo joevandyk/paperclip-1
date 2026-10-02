@@ -341,6 +341,30 @@ describe("InviteLandingPage", () => {
     });
   });
 
+  it("offers only password sign-in and Google on the invite page when sign-up is turned off", async () => {
+    healthGetMock.mockResolvedValue({
+      status: "ok",
+      deploymentMode: "authenticated",
+      authSocialProviders: ["google"],
+      authSignUpDisabled: true,
+    });
+    const root = await mountInvite();
+
+    const form = container.querySelector('[data-testid="invite-inline-auth"]') as HTMLFormElement | null;
+    expect(form).not.toBeNull();
+    expect(form!.getAttribute("action")).toBe("/api/auth/sign-in/email");
+    expect(container.querySelector('input[name="name"]')).toBeNull();
+    expect(container.textContent).not.toContain("Create account");
+    expect(container.textContent).not.toContain("I already have an account");
+    expect(container.textContent).toContain("Sign in to continue");
+    expect(container.textContent).toContain("Sign in with your existing Paperclip account or continue with Google.");
+    expect(findGoogleButton()).toBeDefined();
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
   it("explains a refused Google sign-in on the invite page", async () => {
     healthGetMock.mockResolvedValue({ status: "ok", deploymentMode: "authenticated", authSocialProviders: ["google"] });
     const root = await mountInvite("/invite/pcp_invite_test?error=signup_disabled");

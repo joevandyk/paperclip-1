@@ -215,7 +215,7 @@ export function InviteLandingPage() {
   const [searchParams] = useSearchParams();
   const location = useLocation();
   const token = (params.token ?? "").trim();
-  const [authMode, setAuthMode] = useState<AuthMode>("sign_up");
+  const [selectedAuthMode, setAuthMode] = useState<AuthMode>("sign_up");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -233,6 +233,10 @@ export function InviteLandingPage() {
     queryFn: () => healthApi.get(),
     retry: false,
   });
+  // With sign-up off, a new account can only come from Google, so the
+  // password form is sign-in only.
+  const signUpEnabled = !healthQuery.data?.authPasswordLoginDisabled && !healthQuery.data?.authSignUpDisabled;
+  const authMode: AuthMode = signUpEnabled ? selectedAuthMode : "sign_in";
   const sessionQuery = useQuery({
     queryKey: queryKeys.auth.session,
     queryFn: () => authApi.getSession(),
@@ -678,13 +682,15 @@ export function InviteLandingPage() {
                   <p className="mt-1 text-sm text-zinc-400">
                     {!passwordEnabled
                       ? `Use your Google account. After that, you'll come right back here to accept the invite for ${companyDisplayName}.`
-                      : authMode === "sign_up"
-                        ? `Start with a Paperclip account. After that, you'll come right back here to accept the invite for ${companyDisplayName}.`
-                        : "Use the Paperclip account that already matches this invite. If you do not have one yet, switch back to create account."}
+                      : !signUpEnabled
+                        ? `Sign in with your existing Paperclip account${googleEnabled ? " or continue with Google" : ""}. After that, you'll come right back here to accept the invite for ${companyDisplayName}.`
+                        : authMode === "sign_up"
+                          ? `Start with a Paperclip account. After that, you'll come right back here to accept the invite for ${companyDisplayName}.`
+                          : "Use the Paperclip account that already matches this invite. If you do not have one yet, switch back to create account."}
                   </p>
                 </div>
 
-                {passwordEnabled ? (
+                {signUpEnabled ? (
                   <div className="flex gap-2">
                     <button
                       type="button"
@@ -833,7 +839,7 @@ export function InviteLandingPage() {
                   />
                 ) : null}
 
-                {passwordEnabled ? (
+                {signUpEnabled ? (
                   <p className="text-xs leading-5 text-zinc-500">
                     {authMode === "sign_up"
                       ? "Already signed up before? Use the existing-account option instead so the invite lands on the right Paperclip user."

@@ -1851,6 +1851,7 @@ registry.registerPath({
         bootstrapInviteActive: z.boolean().optional(),
         authSocialProviders: z.array(z.string()).optional(),
         authPasswordLoginDisabled: z.boolean().optional(),
+        authSignUpDisabled: z.boolean().optional(),
         databaseBackup: z
           .object({
             enabled: z.boolean(),
