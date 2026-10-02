@@ -5,17 +5,38 @@
  * allowed-domain gate all run as they do in production.
  */
 
+import { createHash, randomUUID } from "node:crypto";
 import express from "express";
 import request from "supertest";
+import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { authAccounts, authUsers, createDb } from "@paperclipai/db";
+import {
+  activityLog,
+  authAccounts,
+  authSessions,
+  authUsers,
+  companies,
+  companyMemberships,
+  createDb,
+  invites,
+  joinRequests,
+  principalPermissionGrants,
+} from "@paperclipai/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
-import { createBetterAuthHandler, createBetterAuthInstance } from "../auth/better-auth.js";
+import { createBetterAuthHandler, createBetterAuthInstance, resolveBetterAuthSession } from "../auth/better-auth.js";
+import { actorMiddleware } from "../middleware/auth.js";
 import type { GoogleAuthConfig } from "../auth/google.js";
 import type { Config } from "../config.js";
+
+vi.hoisted(() => {
+  process.env.PAPERCLIP_HOME = "/tmp/paperclip-test-home";
+  process.env.PAPERCLIP_INSTANCE_ID = "vitest";
+  process.env.PAPERCLIP_LOG_DIR = "/tmp/paperclip-test-home/logs";
+  process.env.PAPERCLIP_IN_WORKTREE = "false";
+});
 
 const ORIGIN = "http://127.0.0.1:41998";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -89,6 +110,13 @@ describeEmbeddedPostgres("Better Auth Google sign-in against the real schema", (
 
   afterEach(async () => {
     vi.restoreAllMocks();
+    await db.delete(activityLog);
+    await db.delete(joinRequests);
+    await db.delete(invites);
+    await db.delete(principalPermissionGrants);
+    await db.delete(companyMemberships);
+    await db.delete(companies);
+    await db.delete(authSessions);
     await db.delete(authAccounts);
     await db.delete(authUsers);
   });
@@ -107,11 +135,51 @@ describeEmbeddedPostgres("Better Auth Google sign-in against the real schema", (
     return app;
   }
 
-  async function signInWithGoogle(app: express.Express, profile: GoogleProfile) {
+  /** The Better Auth mount, the session-resolving actor middleware and the invite routes, wired as in `createApp`. */
+  async function appWithInvites(config: Config) {
+    const { accessRoutes } = await import("../routes/access.js");
+    const auth = createBetterAuthInstance(db, config, [ORIGIN]);
+    const app = express();
+    app.all("/api/auth/{*authPath}", createBetterAuthHandler(auth));
+    app.use(express.json());
+    app.use(actorMiddleware(db, {
+      deploymentMode: "authenticated",
+      resolveSession: (req) => resolveBetterAuthSession(auth, req),
+    }));
+    app.use("/api", accessRoutes(db, {
+      deploymentMode: "authenticated",
+      deploymentExposure: "private",
+      bindHost: "127.0.0.1",
+      allowedHostnames: ["127.0.0.1"],
+    }));
+    app.use((err: { status?: number; message?: string }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+      res.status(err.status ?? 500).json({ error: err.message ?? "Internal server error" });
+    });
+    return app;
+  }
+
+  async function createHumanInvite() {
+    const company = await db
+      .insert(companies)
+      .values({ name: "Invite Co", issuePrefix: `IV${randomUUID().replace(/-/g, "").slice(0, 6).toUpperCase()}` })
+      .returning()
+      .then((rows) => rows[0]!);
+    const token = `pcp_invite_${randomUUID()}`;
+    await db.insert(invites).values({
+      companyId: company.id,
+      inviteType: "company_join",
+      allowedJoinTypes: "human",
+      tokenHash: createHash("sha256").update(token).digest("hex"),
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+    });
+    return { company, token };
+  }
+
+  async function signInWithGoogle(app: express.Express, profile: GoogleProfile, callbackURL = "/invite/test-token") {
     const start = await request(app)
       .post("/api/auth/sign-in/social")
       .set("origin", ORIGIN)
-      .send({ provider: "google", callbackURL: "/invite/test-token", errorCallbackURL: "/auth" });
+      .send({ provider: "google", callbackURL, errorCallbackURL: "/auth" });
     expect(start.status).toBe(200);
     const authorizationUrl = new URL(start.body.url);
     expect(authorizationUrl.origin).toBe("https://accounts.google.com");
@@ -280,6 +348,96 @@ describeEmbeddedPostgres("Better Auth Google sign-in against the real schema", (
     expect(() => createBetterAuthInstance(db, testConfig({ disablePasswordLogin: true }), [ORIGIN])).toThrow(
       /PAPERCLIP_AUTH_DISABLE_PASSWORD_LOGIN/,
     );
+  });
+
+  describe("with email sign-up and password login turned off", () => {
+    const lockedDown = () => testConfig({ google: workspace, disableSignUp: true, disablePasswordLogin: true });
+
+    it("refuses email sign-up when only sign-up is disabled", async () => {
+      const signUp = await request(appFor(testConfig({ google: workspace, disableSignUp: true })))
+        .post("/api/auth/sign-up/email")
+        .set("origin", ORIGIN)
+        .send({ email: "ada@example.com", password: "correct-horse-battery-staple", name: "Ada" });
+
+      expect(signUp.status).toBeGreaterThanOrEqual(400);
+      expect(await db.select().from(authUsers)).toHaveLength(0);
+    });
+
+    it("lets an invited person create their account with Google and accept the invite", async () => {
+      const app = await appWithInvites(lockedDown());
+      const { company, token } = await createHumanInvite();
+
+      const { callback } = await signInWithGoogle(app, {
+        sub: "google-20", email: "ada@example.com", email_verified: true, hd: "example.com",
+      }, `/invite/${token}`);
+      expect(callback.headers.location).toBe(`/invite/${token}`);
+      const [user] = await db.select().from(authUsers);
+      expect(user).toMatchObject({ email: "ada@example.com" });
+
+      const accept = await request(app)
+        .post(`/api/invites/${token}/accept`)
+        .set("origin", ORIGIN)
+        .set("Cookie", cookiesFrom(callback).join("; "))
+        .send({ requestType: "human" });
+
+      expect(accept.status).toBeLessThan(300);
+      const requests = await db.select().from(joinRequests).where(eq(joinRequests.companyId, company.id));
+      expect(requests).toMatchObject([{ requestType: "human", requestingUserId: user!.id }]);
+    });
+
+    it("lets an uninvited person from an allowed domain create an account with no company access", async () => {
+      const app = await appWithInvites(lockedDown());
+      await createHumanInvite();
+
+      const { callback } = await signInWithGoogle(app, {
+        sub: "google-21", email: "bob@example.com", email_verified: true, hd: "example.com",
+      }, "/");
+      expect(callback.headers.location).toBe("/");
+      const [user] = await db.select().from(authUsers);
+      expect(user).toMatchObject({ email: "bob@example.com" });
+
+      expect(await db.select().from(companyMemberships).where(eq(companyMemberships.principalId, user!.id))).toHaveLength(0);
+      expect(await db.select().from(joinRequests)).toHaveLength(0);
+      const guessedInvite = await request(app)
+        .post(`/api/invites/pcp_invite_${randomUUID()}/accept`)
+        .set("origin", ORIGIN)
+        .set("Cookie", cookiesFrom(callback).join("; "))
+        .send({ requestType: "human" });
+      expect(guessedInvite.status).toBe(404);
+    });
+
+    it("refuses a Google account from another domain, even with an invite link", async () => {
+      const app = await appWithInvites(lockedDown());
+      const { token } = await createHumanInvite();
+
+      const otherWorkspace = await signInWithGoogle(app, {
+        sub: "google-22", email: "eve@other.example", email_verified: true, hd: "other.example",
+      }, `/invite/${token}`);
+      expect(otherWorkspace.callback.headers.location).toMatch(/^\/auth\?error=email_domain_not_allowed&/);
+
+      const personal = await signInWithGoogle(app, {
+        sub: "google-23", email: "eve@gmail.com", email_verified: true,
+      }, `/invite/${token}`);
+      expect(personal.callback.headers.location).toBe("/auth?error=unable_to_get_user_info");
+
+      expect(await db.select().from(authUsers)).toHaveLength(0);
+      expect(await db.select().from(joinRequests)).toHaveLength(0);
+    });
+  });
+
+  it("refuses an already-linked Google account once its domain is no longer allowed", async () => {
+    const before = await signInWithGoogle(appFor(testConfig({ google })), {
+      sub: "google-24", email: "ada@other.example", email_verified: true, hd: "other.example",
+    });
+    expect(before.callback.headers.location).toBe("/invite/test-token");
+    expect(cookiesFrom(before.callback).some((cookie) => cookie.includes("session_token="))).toBe(true);
+
+    const after = await signInWithGoogle(appFor(testConfig({ google: workspace })), {
+      sub: "google-24", email: "ada@other.example", email_verified: true, hd: "other.example",
+    });
+
+    expect(after.callback.headers.location).toMatch(/^\/auth\?error=email_domain_not_allowed&/);
+    expect(cookiesFrom(after.callback).some((cookie) => cookie.includes("session_token="))).toBe(false);
   });
 
   it("keeps sign-up closed to Google without an allowed-domain list", async () => {
