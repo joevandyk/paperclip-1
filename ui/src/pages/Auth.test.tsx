@@ -11,6 +11,7 @@ import { AuthPage } from "./Auth";
 const getSessionMock = vi.hoisted(() => vi.fn());
 const signInEmailMock = vi.hoisted(() => vi.fn());
 const signUpEmailMock = vi.hoisted(() => vi.fn());
+const signInSocialMock = vi.hoisted(() => vi.fn());
 const healthMock = vi.hoisted(() => vi.fn());
 const beginCloudSignInMock = vi.hoisted(() => vi.fn());
 
@@ -25,6 +26,7 @@ vi.mock("../api/auth", () => ({
     getSession: () => getSessionMock(),
     signInEmail: (input: unknown) => signInEmailMock(input),
     signUpEmail: (input: unknown) => signUpEmailMock(input),
+    signInSocial: (input: unknown) => signInSocialMock(input),
   },
 }));
 
@@ -265,6 +267,56 @@ describe("AuthPage", () => {
     expect(emailInput.getAttribute("aria-invalid")).toBe("true");
     expect(passwordInput.getAttribute("aria-describedby")).toBe(errorId);
     expect(passwordInput.getAttribute("aria-invalid")).toBe("true");
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it("hides Google sign-in when the server has not configured it", async () => {
+    const { root } = await mount("/auth?error=signup_disabled");
+
+    expect(container.textContent).not.toContain("Continue with Google");
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it("starts Google sign-in and returns to the requested page", async () => {
+    healthMock.mockResolvedValue({ status: "ok", deploymentMode: "authenticated", authSocialProviders: ["google"] });
+    // The browser leaves the page once the URL arrives, so keep it pending.
+    signInSocialMock.mockReturnValue(new Promise(() => {}));
+    const { root } = await mount("/auth?next=%2Finvite%2Fabc");
+
+    const button = Array.from(container.querySelectorAll("button"))
+      .find((candidate) => candidate.textContent?.includes("Continue with Google"));
+    expect(button).toBeDefined();
+    await act(async () => {
+      button!.click();
+    });
+    await flushReact();
+
+    expect(signInSocialMock).toHaveBeenCalledWith({
+      provider: "google",
+      callbackURL: "/invite/abc",
+      errorCallbackURL: "/auth?next=%2Finvite%2Fabc",
+    });
+    expect(button!.textContent).toContain("Redirecting");
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it("explains a refused Google sign-in", async () => {
+    healthMock.mockResolvedValue({ status: "ok", deploymentMode: "authenticated", authSocialProviders: ["google"] });
+    const { root } = await mount("/auth?error=email_domain_not_allowed");
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+      "This Google account is not allowed to sign in to this instance.",
+    );
 
     await act(async () => {
       root.unmount();

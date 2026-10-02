@@ -123,6 +123,8 @@ export function healthRoutes(
     deploymentMode: DeploymentMode;
     deploymentExposure: DeploymentExposure;
     authReady: boolean;
+    /** Better Auth social providers the sign-in page can offer. */
+    authSocialProviders?: string[];
     companyDeletionEnabled: boolean;
     serverInfo?: ServerInfoSnapshot;
     databaseBackupHealth?: InspectDatabaseBackupHealthOptions;
@@ -245,6 +247,9 @@ export function healthRoutes(
     // fuller-detail fetch. Omitted entirely when nothing is hidden, so
     // deployments without the env var keep today's byte-identical responses.
     const hiddenSettings = [...getHiddenSettings(runtimeEnv)];
+    // Sign-in pages read this before anyone is signed in. Omitted when no
+    // social provider is configured, like `hiddenSettings`.
+    const authSocialProviders = opts.authSocialProviders ?? [];
     // serverInfo (git SHA + process start) rides on the full-details responses
     // only, so it reaches board/agent actors in authenticated mode or any caller
     // in local_trusted dev — never anonymous authenticated callers. The
@@ -396,6 +401,7 @@ export function healthRoutes(
         commit,
         bootstrapStatus,
         bootstrapInviteActive,
+        ...(authSocialProviders.length ? { authSocialProviders } : {}),
         ...(redactedDatabaseBackup ? { databaseBackup: redactedDatabaseBackup } : {}),
         ...(redactedWarnings ? { warnings: redactedWarnings } : {}),
         ...(devServer ? { devServer } : {}),
@@ -420,6 +426,7 @@ export function healthRoutes(
       authReady: opts.authReady,
       bootstrapStatus,
       bootstrapInviteActive,
+      ...(authSocialProviders.length ? { authSocialProviders } : {}),
       features: {
         companyDeletionEnabled: opts.companyDeletionEnabled,
       },

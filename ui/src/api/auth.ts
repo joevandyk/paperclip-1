@@ -179,6 +179,14 @@ export const authApi = {
     await authPost("/sign-up/email", input);
   },
 
+  /** Starts an OAuth sign-in and returns the provider URL to send the browser to. */
+  signInSocial: async (input: { provider: string; callbackURL: string; errorCallbackURL: string }) => {
+    const payload = await authPost("/sign-in/social", input);
+    const url = payload && typeof payload === "object" ? (payload as { url?: unknown }).url : null;
+    if (typeof url !== "string") throw new Error("Sign-in provider did not return a URL");
+    return url;
+  },
+
   getProfile: async (): Promise<CurrentUserProfile> => {
     const res = await fetch("/api/auth/profile", {
       credentials: "include",

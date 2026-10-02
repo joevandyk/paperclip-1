@@ -36,6 +36,8 @@ export type HealthStatus = {
   authReady?: boolean;
   bootstrapStatus?: "ready" | "bootstrap_pending";
   bootstrapInviteActive?: boolean;
+  /** Social sign-in providers the server has configured, such as "google". */
+  authSocialProviders?: string[];
   features?: {
     companyDeletionEnabled?: boolean;
   };

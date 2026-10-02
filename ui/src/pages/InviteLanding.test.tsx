@@ -13,6 +13,7 @@ const acceptInviteMock = vi.hoisted(() => vi.fn());
 const getSessionMock = vi.hoisted(() => vi.fn());
 const signInEmailMock = vi.hoisted(() => vi.fn());
 const signUpEmailMock = vi.hoisted(() => vi.fn());
+const signInSocialMock = vi.hoisted(() => vi.fn());
 const healthGetMock = vi.hoisted(() => vi.fn());
 const listCompaniesMock = vi.hoisted(() => vi.fn());
 const setSelectedCompanyIdMock = vi.hoisted(() => vi.fn());
@@ -29,6 +30,7 @@ vi.mock("../api/auth", () => ({
     getSession: () => getSessionMock(),
     signInEmail: (input: unknown) => signInEmailMock(input),
     signUpEmail: (input: unknown) => signUpEmailMock(input),
+    signInSocial: (input: unknown) => signInSocialMock(input),
   },
 }));
 
@@ -252,6 +254,81 @@ describe("InviteLandingPage", () => {
     expect(container.querySelector('input[name="name"]')).toBeNull();
     expect(container.textContent).toContain("Sign in to continue");
     expect(localStorage.getItem("paperclip:pending-invite-token")).toBe("pcp_invite_test");
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  async function mountInvite(path = "/invite/pcp_invite_test") {
+    const root = createRoot(container);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={[path]}>
+          <QueryClientProvider client={queryClient}>
+            <Routes>
+              <Route path="/invite/:token" element={<InviteLandingPage />} />
+            </Routes>
+          </QueryClientProvider>
+        </MemoryRouter>,
+      );
+    });
+    await flushReact();
+    await flushReact();
+    return root;
+  }
+
+  function findGoogleButton() {
+    return Array.from(container.querySelectorAll("button"))
+      .find((candidate) => candidate.textContent?.includes("Continue with Google"));
+  }
+
+  it("does not offer Google sign-in when the server has not configured it", async () => {
+    const root = await mountInvite("/invite/pcp_invite_test?error=signup_disabled");
+
+    expect(container.querySelector('[data-testid="invite-inline-auth"]')).not.toBeNull();
+    expect(findGoogleButton()).toBeUndefined();
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it("lets an invited person continue with Google and come back to the invite", async () => {
+    healthGetMock.mockResolvedValue({ status: "ok", deploymentMode: "authenticated", authSocialProviders: ["google"] });
+    // The browser leaves the page once the URL arrives, so keep it pending.
+    signInSocialMock.mockReturnValue(new Promise(() => {}));
+    const root = await mountInvite();
+
+    const button = findGoogleButton();
+    expect(button).toBeDefined();
+    await act(async () => {
+      button!.click();
+    });
+    await flushReact();
+
+    expect(signInSocialMock).toHaveBeenCalledWith({
+      provider: "google",
+      callbackURL: "/invite/pcp_invite_test",
+      errorCallbackURL: "/invite/pcp_invite_test",
+    });
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it("explains a refused Google sign-in on the invite page", async () => {
+    healthGetMock.mockResolvedValue({ status: "ok", deploymentMode: "authenticated", authSocialProviders: ["google"] });
+    const root = await mountInvite("/invite/pcp_invite_test?error=signup_disabled");
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+      "There is no account for this Google user, and sign-up is disabled on this instance.",
+    );
 
     await act(async () => {
       root.unmount();

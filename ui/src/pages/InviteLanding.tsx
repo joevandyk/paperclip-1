@@ -4,8 +4,9 @@ import { AGENT_ADAPTER_TYPES } from "@paperclipai/shared";
 import type { AgentAdapterType, JoinRequest } from "@paperclipai/shared";
 import { Button } from "@/components/ui/button";
 import { CompanyPatternIcon } from "@/components/CompanyPatternIcon";
+import { GoogleSignInButton, googleSignInErrorMessage, isGoogleSignInEnabled } from "@/components/GoogleSignInButton";
 import { useCompany } from "@/context/CompanyContext";
-import { Link, useNavigate, useParams } from "@/lib/router";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "@/lib/router";
 import { accessApi } from "../api/access";
 import { authApi } from "../api/auth";
 import { fetchCompanyListForCurrentAccount, useCompanyListQuery } from "../api/companies-query";
@@ -211,6 +212,8 @@ export function InviteLandingPage() {
   const navigate = useNavigate();
   const { setSelectedCompanyId } = useCompany();
   const params = useParams();
+  const [searchParams] = useSearchParams();
+  const location = useLocation();
   const token = (params.token ?? "").trim();
   const [authMode, setAuthMode] = useState<AuthMode>("sign_up");
   const [name, setName] = useState("");
@@ -318,6 +321,8 @@ export function InviteLandingPage() {
     !isCurrentMember &&
     !result &&
     error === null;
+  const googleEnabled = isGoogleSignInEnabled(healthQuery.data);
+  const googleError = googleEnabled ? googleSignInErrorMessage(searchParams.get("error")) : null;
   const sessionLabel =
     sessionQuery.data?.user.name?.trim() ||
     sessionQuery.data?.user.email?.trim() ||
@@ -707,6 +712,12 @@ export function InviteLandingPage() {
                   </button>
                 </div>
 
+                {googleError ? (
+                  <p role="alert" className="text-xs text-red-400">
+                    {googleError}
+                  </p>
+                ) : null}
+
                 <form
                   className="space-y-4"
                   method="post"
@@ -806,6 +817,14 @@ export function InviteLandingPage() {
                         : "Create account and continue"}
                   </Button>
                 </form>
+
+                {googleEnabled ? (
+                  <GoogleSignInButton
+                    className="rounded-none"
+                    callbackURL={location.pathname}
+                    errorCallbackURL={location.pathname}
+                  />
+                ) : null}
 
                 <p className="text-xs leading-5 text-zinc-500">
                   {authMode === "sign_up"

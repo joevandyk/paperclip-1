@@ -481,6 +481,7 @@ export async function createApp(
     authPublicBaseUrl?: string;
     chatWebhookPublicBaseUrl?: string;
     authReady: boolean;
+    authSocialProviders?: string[];
     companyDeletionEnabled: boolean;
     announcements?: { enabled: boolean; feedUrl: string };
     instanceId?: string;
@@ -648,6 +649,7 @@ export async function createApp(
       deploymentMode: opts.deploymentMode,
       deploymentExposure: opts.deploymentExposure,
       authReady: opts.authReady,
+      authSocialProviders: opts.authSocialProviders,
       companyDeletionEnabled: opts.companyDeletionEnabled,
       databaseBackupHealth: opts.databaseBackupHealth,
     }),

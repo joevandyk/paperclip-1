@@ -7,6 +7,7 @@ import { config as loadDotenv } from "dotenv";
 import { resolvePaperclipEnvPath } from "./paths.js";
 import { maybeRepairLegacyWorktreeConfigAndEnvFiles } from "./worktree-config.js";
 import { shouldLoadWorkingDirectoryEnv } from "./env-file-policy.js";
+import { parseGoogleAuthConfig, type GoogleAuthConfig } from "./auth/google.js";
 import {
   AUTH_BASE_URL_MODES,
   BIND_MODES,
@@ -66,6 +67,7 @@ export interface Config {
   authPublicBaseUrl: string | undefined;
   chatWebhookPublicBaseUrl: string | undefined;
   authDisableSignUp: boolean;
+  authGoogle: GoogleAuthConfig | undefined;
   databaseMode: DatabaseMode;
   databaseUrl: string | undefined;
   databaseMigrationUrl: string | undefined;
@@ -322,6 +324,7 @@ export function loadConfig(): Config {
       process.env.PAPERCLIP_CHAT_WEBHOOK_PUBLIC_URL,
     ),
     authDisableSignUp,
+    authGoogle: parseGoogleAuthConfig(),
     databaseMode: fileDatabaseMode,
     databaseUrl: process.env.DATABASE_URL ?? fileDbUrl,
     databaseMigrationUrl: process.env.DATABASE_MIGRATION_URL,

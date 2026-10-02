@@ -26,6 +26,9 @@ All environment variables that Paperclip uses for server configuration.
 | `PAPERCLIP_RUNNER_REMOTE_CODEX_PATH` | (unset) | Optional host-local path to a Codex executable built for the remote target OS and architecture. For remote Codex-backed runners, Paperclip stages and verifies this executable beside `paperclip-runnerd`. |
 | `PAPERCLIP_RUNNER_REMOTE_CODEX_NPM_SPEC` | (unset) | Optional pinned npm package spec (for example, `@openai/codex@0.156.0`) installed inside each fresh remote lease when its Codex harness is not baked into the sandbox image. Mutually exclusive with `PAPERCLIP_RUNNER_REMOTE_CODEX_PATH`; Paperclip verifies the installed executable before starting `runnerd`. |
 | `PAPERCLIP_RUNNER_REMOTE_PROVIDER_PACK_PATH` | `/opt/paperclip-runner/provider-pack` in Docker; otherwise unset | Host-local path to the immutable provider pack built by `pnpm --filter @paperclipai/paperclip-runner build:provider-pack`. Stamped standard Docker images include the pack; downstream compositions and the `cloud` target inherit it. Unstamped local Docker builds skip pack generation. The pack includes its target-built Node 24.11+ runtime, locked production dependencies, OpenCode proxy/executable, and ACPX sidecar. Remote OpenCode and ACPX fail closed without it. A preinstalled pack is accepted only when its complete digested manifest matches this build-owned pack; otherwise Paperclip stages this pack into the sandbox. |
+| `PAPERCLIP_AUTH_GOOGLE_CLIENT_ID` | (unset) | Google OAuth client ID. With `PAPERCLIP_AUTH_GOOGLE_CLIENT_SECRET`, turns on "Continue with Google" in `authenticated` mode. See [Google sign-in](#google-sign-in). |
+| `PAPERCLIP_AUTH_GOOGLE_CLIENT_SECRET` | (unset) | Google OAuth client secret. |
+| `PAPERCLIP_AUTH_GOOGLE_ALLOWED_DOMAINS` | (unset) | Comma-separated email domains (for example `example.com`). When set, only Google Workspace accounts in these domains can sign in with Google. |
 | `PAPERCLIP_HIDDEN_SETTINGS` | (unset) | Comma-separated settings surfaces to hide from the UI and floor at the API, for operators hosting Paperclip for others (managed cloud, internal shared server). See [Hiding settings surfaces](#hiding-settings-surfaces). |
 | `PAPERCLIP_SETTING_DEFAULTS` | (unset) | JSON object replacing the schema default of selected instance settings, for hosting operators. See [Operator setting defaults](#operator-setting-defaults). |
 
@@ -37,6 +40,31 @@ runs retain their recovery path. The deprecated `enableRunnerPreviewIngress`
 key remains accepted in stored and managed configuration for version-skew
 compatibility, but it has no runtime effect. The setting has no effect on
 legacy adapters or callback bridges.
+
+### Google sign-in
+
+In `authenticated` mode, Paperclip can offer Google sign-in next to email and
+password. Set `PAPERCLIP_AUTH_GOOGLE_CLIENT_ID` and
+`PAPERCLIP_AUTH_GOOGLE_CLIENT_SECRET` from a Google Cloud OAuth client of type
+"Web application". Add this authorized redirect URI to the client:
+
+```
+https://<your-paperclip-host>/api/auth/callback/google
+```
+
+When both values are set, the sign-in page and the invite page show
+"Continue with Google". When they are unset, nothing changes.
+
+- A first Google sign-in creates a Paperclip account. If an account with the
+  same email already exists, Paperclip links Google to it, but only when Google
+  reports the email as verified.
+- `PAPERCLIP_AUTH_GOOGLE_ALLOWED_DOMAINS` limits Google sign-in to Google
+  Workspace accounts in the listed domains. Paperclip refuses personal Google
+  accounts and accounts from other domains.
+- With `PAPERCLIP_AUTH_DISABLE_SIGN_UP=true`, Google sign-in cannot create new
+  accounts unless `PAPERCLIP_AUTH_GOOGLE_ALLOWED_DOMAINS` is set. The allowed
+  domains then act as the sign-up policy, so invited teammates in those
+  domains can create their account with Google.
 
 ### Webhook-only chat ingress
 

@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate, useSearchParams } from "@/lib/router";
+import { useLocation, useNavigate, useSearchParams } from "@/lib/router";
 import { authApi } from "../api/auth";
 import { healthApi } from "../api/health";
 import { CloudSignIn } from "@/components/CloudSignIn";
+import { GoogleSignInButton, googleSignInErrorMessage, isGoogleSignInEnabled } from "@/components/GoogleSignInButton";
 import { clearCloudSignInAttempt } from "@/lib/cloud-sign-in";
 import { tenantSignInReturnPath } from "@/lib/cloudLinks";
 import { queryKeys } from "../lib/queryKeys";
@@ -20,6 +21,7 @@ export function AuthPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const location = useLocation();
   const [mode, setMode] = useState<AuthMode>("sign_in");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -99,6 +101,9 @@ export function AuthPage() {
     return <CloudSignIn cloud={healthQuery.data.cloud} returnTo={nextPath} />;
   }
 
+  const googleEnabled = isGoogleSignInEnabled(healthQuery.data);
+  const googleError = googleEnabled ? googleSignInErrorMessage(searchParams.get("error")) : null;
+
   return (
     <div className="fixed inset-0 flex bg-background">
       <div className="absolute top-4 right-4 z-10">
@@ -119,6 +124,12 @@ export function AuthPage() {
               ? "Use your email and password to access this instance."
               : "Create an account for this instance. Email confirmation is not required in v1."}
           </p>
+
+          {googleError && (
+            <p role="alert" className="mt-4 text-xs text-destructive">
+              {googleError}
+            </p>
+          )}
 
           <form
             className="mt-6 space-y-4"
@@ -203,6 +214,20 @@ export function AuthPage() {
                   : "Create Account"}
             </Button>
           </form>
+
+          {googleEnabled && (
+            <div className="mt-4 space-y-4">
+              <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                <div className="h-px flex-1 bg-border" />
+                or
+                <div className="h-px flex-1 bg-border" />
+              </div>
+              <GoogleSignInButton
+                callbackURL={nextPath}
+                errorCallbackURL={`${location.pathname}?next=${encodeURIComponent(nextPath)}`}
+              />
+            </div>
+          )}
 
           <div className="mt-5 text-sm text-muted-foreground">
             {mode === "sign_in" ? "Need an account?" : "Already have an account?"}{" "}
