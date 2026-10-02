@@ -53,7 +53,10 @@ https://<your-paperclip-host>/api/auth/callback/google
 ```
 
 When both values are set, the sign-in page and the invite page show
-"Continue with Google". When they are unset, nothing changes.
+"Continue with Google". When they are unset, nothing changes. Google sign-in
+needs an explicit public URL (`PAPERCLIP_PUBLIC_URL` or the explicit auth base
+URL), so that the redirect URI Paperclip sends to Google matches the one
+registered on the client.
 
 - A first Google sign-in creates a Paperclip account. If an account with the
   same email already exists, Paperclip links Google to it, but only when Google
@@ -63,8 +66,9 @@ When both values are set, the sign-in page and the invite page show
   accounts and accounts from other domains.
 - With `PAPERCLIP_AUTH_DISABLE_SIGN_UP=true`, Google sign-in cannot create new
   accounts unless `PAPERCLIP_AUTH_GOOGLE_ALLOWED_DOMAINS` is set. The allowed
-  domains then act as the sign-up policy, so invited teammates in those
-  domains can create their account with Google.
+  domains then act as the sign-up policy: anyone with a Workspace account in
+  those domains can create a Paperclip account with Google. The account has no
+  company access until an invite or an admin grants it.
 
 ### Webhook-only chat ingress
 

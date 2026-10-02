@@ -196,20 +196,30 @@ describeEmbeddedPostgres("Better Auth Google sign-in against the real schema", (
     expect(await db.select().from(authUsers)).toHaveLength(0);
   });
 
-  it("asks Google for the allowed hosted domain and refuses other accounts", async () => {
+  it("asks Google for a Workspace account and refuses other accounts", async () => {
     const app = appFor(testConfig({ google: workspace }));
 
     const personal = await signInWithGoogle(app, {
       sub: "google-4", email: "ada@example.com", email_verified: true,
     });
-    expect(personal.authorizationUrl.searchParams.get("hd")).toBe("example.com");
+    expect(personal.authorizationUrl.searchParams.get("hd")).toBe("*");
     expect(personal.callback.headers.location).toBe("/auth?error=unable_to_get_user_info");
 
     const otherWorkspace = await signInWithGoogle(app, {
       sub: "google-5", email: "ada@other.example", email_verified: true, hd: "other.example",
     });
-    expect(otherWorkspace.callback.headers.location).toBe("/auth?error=unable_to_get_user_info");
+    expect(otherWorkspace.callback.headers.location).toMatch(/^\/auth\?error=email_domain_not_allowed&/);
     expect(await db.select().from(authUsers)).toHaveLength(0);
+  });
+
+  it("signs in a Workspace account from any allowed domain", async () => {
+    const { callback } = await signInWithGoogle(
+      appFor(testConfig({ google: { ...google, allowedDomains: ["example.com", "corp.example"] } })),
+      { sub: "google-10", email: "ada@corp.example", email_verified: true, hd: "corp.example" },
+    );
+
+    expect(callback.headers.location).toBe("/invite/test-token");
+    expect(await db.select().from(authUsers)).toMatchObject([{ email: "ada@corp.example" }]);
   });
 
   it("refuses an existing password account outside the allowed domains", async () => {

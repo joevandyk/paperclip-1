@@ -28,12 +28,12 @@ describe("buildGoogleAuthOptions", () => {
     expect(buildGoogleAuthOptions(undefined, { disableSignUp: true })).toEqual({});
   });
 
-  it("restricts the hosted domain and keeps sign-up open for allowed domains", () => {
+  it("requires a Workspace account and keeps sign-up open for allowed domains", () => {
     const one = buildGoogleAuthOptions(
       { clientId: "id", clientSecret: "secret", allowedDomains: ["example.com"] },
       { disableSignUp: true },
     );
-    expect(one.socialProviders?.google).toMatchObject({ hd: "example.com", disableSignUp: false });
+    expect(one.socialProviders?.google).toMatchObject({ hd: "*", disableSignUp: false });
 
     const many = buildGoogleAuthOptions(
       { clientId: "id", clientSecret: "secret", allowedDomains: ["example.com", "corp.example"] },

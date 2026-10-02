@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { HealthStatus } from "@/api/health";
 import { authApi } from "@/api/auth";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 export function isGoogleSignInEnabled(health: HealthStatus | undefined) {
   return health?.authSocialProviders?.includes("google") ?? false;
@@ -43,7 +44,7 @@ export function GoogleSignInButton({
       <Button
         type="button"
         variant="outline"
-        className={`w-full ${className ?? ""}`}
+        className={cn("w-full", className)}
         disabled={pending}
         onClick={async () => {
           setPending(true);

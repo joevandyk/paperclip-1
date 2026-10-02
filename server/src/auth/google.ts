@@ -33,11 +33,10 @@ export function buildGoogleAuthOptions(google: GoogleAuthConfig | undefined, inp
       google: {
         clientId: google.clientId,
         clientSecret: google.clientSecret,
-        // `hd` makes Better Auth reject ID tokens without a matching hosted-domain
-        // claim, so personal Google accounts that use a company address are refused.
-        // With several domains, require any Workspace account and check the email
-        // domain in `validateUserInfo`.
-        ...(restrictsDomains ? { hd: google.allowedDomains.length === 1 ? google.allowedDomains[0] : "*" } : {}),
+        // `hd: "*"` makes Better Auth reject ID tokens without a hosted-domain claim,
+        // so personal Google accounts that use a company address are refused.
+        // `validateUserInfo` checks the email domain.
+        ...(restrictsDomains ? { hd: "*" } : {}),
         // The allowed-domain list is an explicit sign-up policy: it lets invited
         // teammates create their account with Google when email sign-up is off.
         disableSignUp: input.disableSignUp && !restrictsDomains,
