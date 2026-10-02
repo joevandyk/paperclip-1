@@ -38,6 +38,8 @@ export type HealthStatus = {
   bootstrapInviteActive?: boolean;
   /** Social sign-in providers the server has configured, such as "google". */
   authSocialProviders?: string[];
+  /** True when the server has turned off email/password sign-in. */
+  authPasswordLoginDisabled?: boolean;
   features?: {
     companyDeletionEnabled?: boolean;
   };

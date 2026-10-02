@@ -323,6 +323,7 @@ export function InviteLandingPage() {
     error === null;
   const googleEnabled = isGoogleSignInEnabled(healthQuery.data);
   const googleError = googleEnabled ? googleSignInErrorMessage(searchParams.get("error")) : null;
+  const passwordEnabled = !healthQuery.data?.authPasswordLoginDisabled;
   const sessionLabel =
     sessionQuery.data?.user.name?.trim() ||
     sessionQuery.data?.user.email?.trim() ||
@@ -672,45 +673,49 @@ export function InviteLandingPage() {
               <div className="space-y-5">
                 <div>
                   <h2 className="text-lg font-semibold">
-                    {authMode === "sign_up" ? "Create your account" : "Sign in to continue"}
+                    {passwordEnabled && authMode === "sign_up" ? "Create your account" : "Sign in to continue"}
                   </h2>
                   <p className="mt-1 text-sm text-zinc-400">
-                    {authMode === "sign_up"
-                      ? `Start with a Paperclip account. After that, you'll come right back here to accept the invite for ${companyDisplayName}.`
-                      : "Use the Paperclip account that already matches this invite. If you do not have one yet, switch back to create account."}
+                    {!passwordEnabled
+                      ? `Use your Google account. After that, you'll come right back here to accept the invite for ${companyDisplayName}.`
+                      : authMode === "sign_up"
+                        ? `Start with a Paperclip account. After that, you'll come right back here to accept the invite for ${companyDisplayName}.`
+                        : "Use the Paperclip account that already matches this invite. If you do not have one yet, switch back to create account."}
                   </p>
                 </div>
 
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    className={`${modeButtonBaseClassName} ${
-                      authMode === "sign_up"
-                        ? "border-zinc-100 bg-zinc-100 text-zinc-950"
-                        : "border-zinc-800 text-zinc-300 hover:border-zinc-600"
-                    }`}
-                    onClick={() => {
-                      setAuthFeedback(null);
-                      setAuthMode("sign_up");
-                    }}
-                  >
-                    Create account
-                  </button>
-                  <button
-                    type="button"
-                    className={`${modeButtonBaseClassName} ${
-                      authMode === "sign_in"
-                        ? "border-zinc-100 bg-zinc-100 text-zinc-950"
-                        : "border-zinc-800 text-zinc-300 hover:border-zinc-600"
-                    }`}
-                    onClick={() => {
-                      setAuthFeedback(null);
-                      setAuthMode("sign_in");
-                    }}
-                  >
-                    I already have an account
-                  </button>
-                </div>
+                {passwordEnabled ? (
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      className={`${modeButtonBaseClassName} ${
+                        authMode === "sign_up"
+                          ? "border-zinc-100 bg-zinc-100 text-zinc-950"
+                          : "border-zinc-800 text-zinc-300 hover:border-zinc-600"
+                      }`}
+                      onClick={() => {
+                        setAuthFeedback(null);
+                        setAuthMode("sign_up");
+                      }}
+                    >
+                      Create account
+                    </button>
+                    <button
+                      type="button"
+                      className={`${modeButtonBaseClassName} ${
+                        authMode === "sign_in"
+                          ? "border-zinc-100 bg-zinc-100 text-zinc-950"
+                          : "border-zinc-800 text-zinc-300 hover:border-zinc-600"
+                      }`}
+                      onClick={() => {
+                        setAuthFeedback(null);
+                        setAuthMode("sign_in");
+                      }}
+                    >
+                      I already have an account
+                    </button>
+                  </div>
+                ) : null}
 
                 {googleError ? (
                   <p role="alert" className="text-xs text-red-400">
@@ -718,105 +723,107 @@ export function InviteLandingPage() {
                   </p>
                 ) : null}
 
-                <form
-                  className="space-y-4"
-                  method="post"
-                  action={authMode === "sign_up" ? "/api/auth/sign-up/email" : "/api/auth/sign-in/email"}
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    if (authMutation.isPending) return;
-                    if (!authCanSubmit) {
-                      setAuthFeedback({ tone: "error", message: "Please fill in all required fields." });
-                      return;
-                    }
-                    authMutation.mutate();
-                  }}
-                  data-testid="invite-inline-auth"
-                >
-                  {authMode === "sign_up" ? (
-                    <label className="block text-sm" htmlFor="invite-name">
-                      <span className="mb-1 block text-zinc-400">Name</span>
+                {passwordEnabled ? (
+                  <form
+                    className="space-y-4"
+                    method="post"
+                    action={authMode === "sign_up" ? "/api/auth/sign-up/email" : "/api/auth/sign-in/email"}
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      if (authMutation.isPending) return;
+                      if (!authCanSubmit) {
+                        setAuthFeedback({ tone: "error", message: "Please fill in all required fields." });
+                        return;
+                      }
+                      authMutation.mutate();
+                    }}
+                    data-testid="invite-inline-auth"
+                  >
+                    {authMode === "sign_up" ? (
+                      <label className="block text-sm" htmlFor="invite-name">
+                        <span className="mb-1 block text-zinc-400">Name</span>
+                        <input
+                          id="invite-name"
+                          name="name"
+                          className={fieldClassName}
+                          value={name}
+                          onChange={(event) => {
+                            setName(event.target.value);
+                            setAuthFeedback(null);
+                          }}
+                          autoComplete="name"
+                          required
+                          aria-required="true"
+                          aria-invalid={authFeedback?.tone === "error" ? true : undefined}
+                          aria-describedby={authFeedback ? authErrorId : undefined}
+                          autoFocus
+                        />
+                      </label>
+                    ) : null}
+                    <label className="block text-sm" htmlFor="invite-email">
+                      <span className="mb-1 block text-zinc-400">Email</span>
                       <input
-                        id="invite-name"
-                        name="name"
+                        id="invite-email"
+                        name="email"
+                        type="email"
                         className={fieldClassName}
-                        value={name}
+                        value={email}
                         onChange={(event) => {
-                          setName(event.target.value);
+                          setEmail(event.target.value);
                           setAuthFeedback(null);
                         }}
-                        autoComplete="name"
+                        autoComplete="username"
                         required
                         aria-required="true"
                         aria-invalid={authFeedback?.tone === "error" ? true : undefined}
                         aria-describedby={authFeedback ? authErrorId : undefined}
-                        autoFocus
+                        autoFocus={authMode === "sign_in"}
                       />
                     </label>
-                  ) : null}
-                  <label className="block text-sm" htmlFor="invite-email">
-                    <span className="mb-1 block text-zinc-400">Email</span>
-                    <input
-                      id="invite-email"
-                      name="email"
-                      type="email"
-                      className={fieldClassName}
-                      value={email}
-                      onChange={(event) => {
-                        setEmail(event.target.value);
-                        setAuthFeedback(null);
-                      }}
-                      autoComplete="username"
-                      required
-                      aria-required="true"
-                      aria-invalid={authFeedback?.tone === "error" ? true : undefined}
-                      aria-describedby={authFeedback ? authErrorId : undefined}
-                      autoFocus={authMode === "sign_in"}
-                    />
-                  </label>
-                  <label className="block text-sm" htmlFor="invite-password">
-                    <span className="mb-1 block text-zinc-400">Password</span>
-                    <input
-                      id="invite-password"
-                      name="password"
-                      type="password"
-                      className={fieldClassName}
-                      value={password}
-                      onChange={(event) => {
-                        setPassword(event.target.value);
-                        setAuthFeedback(null);
-                      }}
-                      autoComplete={authMode === "sign_in" ? "current-password" : "new-password"}
-                      required
-                      aria-required="true"
-                      aria-invalid={authFeedback?.tone === "error" ? true : undefined}
-                      aria-describedby={authFeedback ? authErrorId : undefined}
-                    />
-                  </label>
-                  {authFeedback ? (
-                    <p
-                      id={authErrorId}
-                      role="alert"
-                      className={`text-xs ${
-                        authFeedback.tone === "info" ? "text-amber-300" : "text-red-400"
-                      }`}
+                    <label className="block text-sm" htmlFor="invite-password">
+                      <span className="mb-1 block text-zinc-400">Password</span>
+                      <input
+                        id="invite-password"
+                        name="password"
+                        type="password"
+                        className={fieldClassName}
+                        value={password}
+                        onChange={(event) => {
+                          setPassword(event.target.value);
+                          setAuthFeedback(null);
+                        }}
+                        autoComplete={authMode === "sign_in" ? "current-password" : "new-password"}
+                        required
+                        aria-required="true"
+                        aria-invalid={authFeedback?.tone === "error" ? true : undefined}
+                        aria-describedby={authFeedback ? authErrorId : undefined}
+                      />
+                    </label>
+                    {authFeedback ? (
+                      <p
+                        id={authErrorId}
+                        role="alert"
+                        className={`text-xs ${
+                          authFeedback.tone === "info" ? "text-amber-300" : "text-red-400"
+                        }`}
+                      >
+                        {authFeedback.message}
+                      </p>
+                    ) : null}
+                    <Button
+                      type="submit"
+                      className="w-full rounded-none"
+                      disabled={authMutation.isPending}
+                      aria-disabled={!authCanSubmit || authMutation.isPending}
                     >
-                      {authFeedback.message}
-                    </p>
-                  ) : null}
-                  <Button
-                    type="submit"
-                    className="w-full rounded-none"
-                    disabled={authMutation.isPending}
-                    aria-disabled={!authCanSubmit || authMutation.isPending}
-                  >
-                    {authMutation.isPending
-                      ? "Working..."
-                      : authMode === "sign_in"
-                        ? "Sign in and continue"
-                        : "Create account and continue"}
-                  </Button>
-                </form>
+                      {authMutation.isPending
+                        ? "Working..."
+                        : authMode === "sign_in"
+                          ? "Sign in and continue"
+                          : "Create account and continue"}
+                    </Button>
+                  </form>
+                ) : null}
 
                 {googleEnabled ? (
                   <GoogleSignInButton
@@ -826,11 +833,13 @@ export function InviteLandingPage() {
                   />
                 ) : null}
 
-                <p className="text-xs leading-5 text-zinc-500">
-                  {authMode === "sign_up"
-                    ? "Already signed up before? Use the existing-account option instead so the invite lands on the right Paperclip user."
-                    : "No account yet? Switch back to create account so you can accept the invite with a new login."}
-                </p>
+                {passwordEnabled ? (
+                  <p className="text-xs leading-5 text-zinc-500">
+                    {authMode === "sign_up"
+                      ? "Already signed up before? Use the existing-account option instead so the invite lands on the right Paperclip user."
+                      : "No account yet? Switch back to create account so you can accept the invite with a new login."}
+                  </p>
+                ) : null}
               </div>
             ) : (
               <div className="space-y-4">

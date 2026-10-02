@@ -125,6 +125,8 @@ export function healthRoutes(
     authReady: boolean;
     /** Better Auth social providers the sign-in page can offer. */
     authSocialProviders?: string[];
+    /** True when email/password sign-in is turned off. */
+    authPasswordLoginDisabled?: boolean;
     companyDeletionEnabled: boolean;
     serverInfo?: ServerInfoSnapshot;
     databaseBackupHealth?: InspectDatabaseBackupHealthOptions;
@@ -402,6 +404,7 @@ export function healthRoutes(
         bootstrapStatus,
         bootstrapInviteActive,
         ...(authSocialProviders.length ? { authSocialProviders } : {}),
+        ...(opts.authPasswordLoginDisabled ? { authPasswordLoginDisabled: true } : {}),
         ...(redactedDatabaseBackup ? { databaseBackup: redactedDatabaseBackup } : {}),
         ...(redactedWarnings ? { warnings: redactedWarnings } : {}),
         ...(devServer ? { devServer } : {}),
@@ -427,6 +430,7 @@ export function healthRoutes(
       bootstrapStatus,
       bootstrapInviteActive,
       ...(authSocialProviders.length ? { authSocialProviders } : {}),
+      ...(opts.authPasswordLoginDisabled ? { authPasswordLoginDisabled: true } : {}),
       features: {
         companyDeletionEnabled: opts.companyDeletionEnabled,
       },

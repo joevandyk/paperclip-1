@@ -1850,6 +1850,7 @@ registry.registerPath({
         bootstrapStatus: z.enum(["ready", "bootstrap_pending"]).optional(),
         bootstrapInviteActive: z.boolean().optional(),
         authSocialProviders: z.array(z.string()).optional(),
+        authPasswordLoginDisabled: z.boolean().optional(),
         databaseBackup: z
           .object({
             enabled: z.boolean(),

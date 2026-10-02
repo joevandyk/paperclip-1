@@ -250,6 +250,12 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins:
       "For local development, set BETTER_AUTH_SECRET=paperclip-dev-secret in your .env file.",
     );
   }
+  if (config.authDisablePasswordLogin && !config.authGoogle) {
+    throw new Error(
+      "PAPERCLIP_AUTH_DISABLE_PASSWORD_LOGIN=true leaves no way to sign in. " +
+      "Set PAPERCLIP_AUTH_GOOGLE_CLIENT_ID and PAPERCLIP_AUTH_GOOGLE_CLIENT_SECRET first.",
+    );
+  }
   const disableSecureCookies = shouldDisableSecureAuthCookies({
     deploymentMode: config.deploymentMode,
     deploymentExposure: config.deploymentExposure,
@@ -272,7 +278,7 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins:
       },
     }),
     emailAndPassword: {
-      enabled: true,
+      enabled: !config.authDisablePasswordLogin,
       requireEmailVerification: false,
       disableSignUp: config.authDisableSignUp,
     },

@@ -25,7 +25,7 @@ const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : 
 
 type GoogleProfile = { sub: string; email: string; email_verified: boolean; hd?: string; name?: string };
 
-function testConfig(input: { google?: GoogleAuthConfig; disableSignUp?: boolean }): Config {
+function testConfig(input: { google?: GoogleAuthConfig; disableSignUp?: boolean; disablePasswordLogin?: boolean }): Config {
   return {
     deploymentMode: "authenticated",
     deploymentExposure: "private",
@@ -33,6 +33,7 @@ function testConfig(input: { google?: GoogleAuthConfig; disableSignUp?: boolean 
     authPublicBaseUrl: ORIGIN,
     authDisableSignUp: input.disableSignUp ?? false,
     authGoogle: input.google,
+    authDisablePasswordLogin: input.disablePasswordLogin ?? false,
     allowedHostnames: ["127.0.0.1"],
     port: 41998,
   } as unknown as Config;
@@ -241,6 +242,44 @@ describeEmbeddedPostgres("Better Auth Google sign-in against the real schema", (
 
     expect(callback.headers.location).toBe("/invite/test-token");
     expect(await db.select().from(authUsers)).toMatchObject([{ email: "ada@example.com" }]);
+  });
+
+  it("turns off email and password while Google keeps working", async () => {
+    const app = appFor(testConfig({ google: workspace, disablePasswordLogin: true }));
+
+    const signUp = await request(app)
+      .post("/api/auth/sign-up/email")
+      .set("origin", ORIGIN)
+      .send({ email: "ada@example.com", password: "correct-horse-battery-staple", name: "Ada" });
+    expect(signUp.status).toBe(400);
+    const signIn = await request(app)
+      .post("/api/auth/sign-in/email")
+      .set("origin", ORIGIN)
+      .send({ email: "ada@example.com", password: "correct-horse-battery-staple" });
+    expect(signIn.status).toBe(400);
+    expect(await db.select().from(authUsers)).toHaveLength(0);
+
+    const { callback } = await signInWithGoogle(app, {
+      sub: "google-11", email: "ada@example.com", email_verified: true, hd: "example.com",
+    });
+    expect(callback.headers.location).toBe("/invite/test-token");
+  });
+
+  it("lets a password user keep their account by signing in with Google after passwords are turned off", async () => {
+    await signUpWithPassword(appFor(testConfig({ google: workspace })), "ada@example.com");
+
+    const { callback } = await signInWithGoogle(appFor(testConfig({ google: workspace, disablePasswordLogin: true })), {
+      sub: "google-12", email: "ada@example.com", email_verified: true, hd: "example.com",
+    });
+
+    expect(callback.headers.location).toBe("/invite/test-token");
+    expect(await db.select().from(authUsers)).toHaveLength(1);
+  });
+
+  it("refuses to turn off passwords when Google is not configured", () => {
+    expect(() => createBetterAuthInstance(db, testConfig({ disablePasswordLogin: true }), [ORIGIN])).toThrow(
+      /PAPERCLIP_AUTH_DISABLE_PASSWORD_LOGIN/,
+    );
   });
 
   it("keeps sign-up closed to Google without an allowed-domain list", async () => {

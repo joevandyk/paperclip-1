@@ -68,6 +68,7 @@ export interface Config {
   chatWebhookPublicBaseUrl: string | undefined;
   authDisableSignUp: boolean;
   authGoogle: GoogleAuthConfig | undefined;
+  authDisablePasswordLogin: boolean;
   databaseMode: DatabaseMode;
   databaseUrl: string | undefined;
   databaseMigrationUrl: string | undefined;
@@ -325,6 +326,7 @@ export function loadConfig(): Config {
     ),
     authDisableSignUp,
     authGoogle: parseGoogleAuthConfig(),
+    authDisablePasswordLogin: process.env.PAPERCLIP_AUTH_DISABLE_PASSWORD_LOGIN === "true",
     databaseMode: fileDatabaseMode,
     databaseUrl: process.env.DATABASE_URL ?? fileDbUrl,
     databaseMigrationUrl: process.env.DATABASE_MIGRATION_URL,

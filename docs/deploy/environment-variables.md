@@ -29,6 +29,7 @@ All environment variables that Paperclip uses for server configuration.
 | `PAPERCLIP_AUTH_GOOGLE_CLIENT_ID` | (unset) | Google OAuth client ID. With `PAPERCLIP_AUTH_GOOGLE_CLIENT_SECRET`, turns on "Continue with Google" in `authenticated` mode. See [Google sign-in](#google-sign-in). |
 | `PAPERCLIP_AUTH_GOOGLE_CLIENT_SECRET` | (unset) | Google OAuth client secret. |
 | `PAPERCLIP_AUTH_GOOGLE_ALLOWED_DOMAINS` | (unset) | Comma-separated email domains (for example `example.com`). When set, only Google Workspace accounts in these domains can sign in with Google. |
+| `PAPERCLIP_AUTH_DISABLE_PASSWORD_LOGIN` | `false` | Set to `true` to turn off email and password sign-in and sign-up, so people sign in with Google only. Requires Google sign-in; the server refuses to start without it. |
 | `PAPERCLIP_HIDDEN_SETTINGS` | (unset) | Comma-separated settings surfaces to hide from the UI and floor at the API, for operators hosting Paperclip for others (managed cloud, internal shared server). See [Hiding settings surfaces](#hiding-settings-surfaces). |
 | `PAPERCLIP_SETTING_DEFAULTS` | (unset) | JSON object replacing the schema default of selected instance settings, for hosting operators. See [Operator setting defaults](#operator-setting-defaults). |
 
@@ -69,6 +70,13 @@ registered on the client.
   domains then act as the sign-up policy: anyone with a Workspace account in
   those domains can create a Paperclip account with Google. The account has no
   company access until an invite or an admin grants it.
+
+To use Google only, set `PAPERCLIP_AUTH_DISABLE_PASSWORD_LOGIN=true`. The
+sign-in and invite pages then show only "Continue with Google", and the email
+and password endpoints refuse requests. People who already have a password
+account keep it: their first Google sign-in links to it by verified email.
+Turning off passwords also removes the risk that someone pre-registers a
+password account with another person's address.
 
 ### Webhook-only chat ingress
 

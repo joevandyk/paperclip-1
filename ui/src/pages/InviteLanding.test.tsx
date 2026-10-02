@@ -322,6 +322,25 @@ describe("InviteLandingPage", () => {
     });
   });
 
+  it("offers only Google on the invite page when password login is turned off", async () => {
+    healthGetMock.mockResolvedValue({
+      status: "ok",
+      deploymentMode: "authenticated",
+      authSocialProviders: ["google"],
+      authPasswordLoginDisabled: true,
+    });
+    const root = await mountInvite();
+
+    expect(container.querySelector('[data-testid="invite-inline-auth"]')).toBeNull();
+    expect(container.textContent).not.toContain("I already have an account");
+    expect(container.textContent).toContain("Sign in to continue");
+    expect(findGoogleButton()).toBeDefined();
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
   it("explains a refused Google sign-in on the invite page", async () => {
     healthGetMock.mockResolvedValue({ status: "ok", deploymentMode: "authenticated", authSocialProviders: ["google"] });
     const root = await mountInvite("/invite/pcp_invite_test?error=signup_disabled");

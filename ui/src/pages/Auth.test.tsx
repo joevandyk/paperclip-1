@@ -310,6 +310,26 @@ describe("AuthPage", () => {
     });
   });
 
+  it("offers only Google when password login is turned off", async () => {
+    healthMock.mockResolvedValue({
+      status: "ok",
+      deploymentMode: "authenticated",
+      authSocialProviders: ["google"],
+      authPasswordLoginDisabled: true,
+    });
+    const { root } = await mount();
+
+    expect(container.querySelector("form")).toBeNull();
+    expect(container.querySelector('input[name="password"]')).toBeNull();
+    expect(container.textContent).not.toContain("Create one");
+    expect(container.textContent).toContain("Continue with Google");
+    expect(container.textContent).toContain("Use your Google account to access this instance.");
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
   it("explains a refused Google sign-in", async () => {
     healthMock.mockResolvedValue({ status: "ok", deploymentMode: "authenticated", authSocialProviders: ["google"] });
     const { root } = await mount("/auth?error=email_domain_not_allowed");

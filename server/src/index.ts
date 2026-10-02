@@ -914,6 +914,7 @@ async function startServerWithDatabaseTeardown(
     chatWebhookPublicBaseUrl: config.chatWebhookPublicBaseUrl,
     authReady,
     authSocialProviders: config.deploymentMode === "authenticated" && config.authGoogle ? ["google"] : [],
+    authPasswordLoginDisabled: config.deploymentMode === "authenticated" && config.authDisablePasswordLogin,
     companyDeletionEnabled: config.companyDeletionEnabled,
     announcements: { enabled: config.announcementsEnabled, feedUrl: config.announcementsFeedUrl },
     pluginMigrationDb: pluginMigrationDb as any,
