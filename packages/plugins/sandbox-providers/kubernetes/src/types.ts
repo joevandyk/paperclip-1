@@ -41,7 +41,17 @@ export const kubernetesProviderConfigSchema = z
             effect: z.enum(["NoSchedule", "PreferNoSchedule", "NoExecute"]).optional(),
             tolerationSeconds: z.number().int().optional(),
           })
-          .strict(),
+          .strict()
+          // Same combinations the Kubernetes API server rejects, caught at save time.
+          .refine((t) => t.key || t.operator === "Exists", {
+            message: "a toleration without a key must use operator Exists",
+          })
+          .refine((t) => t.operator !== "Exists" || !t.value, {
+            message: "a toleration with operator Exists must not set a value",
+          })
+          .refine((t) => t.tolerationSeconds === undefined || t.effect === "NoExecute", {
+            message: "tolerationSeconds requires effect NoExecute",
+          }),
       )
       .default([]),
     serviceAccountAnnotations: z.record(z.string()).default({}),

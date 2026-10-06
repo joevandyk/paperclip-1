@@ -81,6 +81,32 @@ describe("plugin", () => {
     expect(result.ok).toBe(false);
   });
 
+  it.each([
+    ["Exists with a value", { key: "dedicated", operator: "Exists", value: "agents" }],
+    ["tolerationSeconds without NoExecute", { key: "dedicated", operator: "Exists", effect: "NoSchedule", tolerationSeconds: 60 }],
+    ["no key without Exists", { operator: "Equal", value: "agents" }],
+  ])("validateConfig rejects a toleration Kubernetes would reject: %s", async (_name, toleration) => {
+    const result = await plugin.definition.onEnvironmentValidateConfig!({
+      driverKey: "kubernetes",
+      config: { inCluster: true, tolerations: [toleration] },
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  it("validateConfig accepts a keyless Exists toleration and NoExecute tolerationSeconds", async () => {
+    const result = await plugin.definition.onEnvironmentValidateConfig!({
+      driverKey: "kubernetes",
+      config: {
+        inCluster: true,
+        tolerations: [
+          { operator: "Exists" },
+          { key: "node.kubernetes.io/not-ready", operator: "Exists", effect: "NoExecute", tolerationSeconds: 300 },
+        ],
+      },
+    });
+    expect(result.ok).toBe(true);
+  });
+
   it("validateConfig rejects unknown backend value", async () => {
     const result = await plugin.definition.onEnvironmentValidateConfig!({
       driverKey: "kubernetes",
